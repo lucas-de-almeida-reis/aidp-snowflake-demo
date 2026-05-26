@@ -1,0 +1,64 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  aidp-snowflake-demo — Notebook runtime configuration            ║
+# ║                                                                  ║
+# ║  Copy this file to `config.yaml` (same directory) and fill in    ║
+# ║  your values. Notebooks read this file at runtime; the path to   ║
+# ║  the file is set at the top of each notebook (CONFIG_PATH).      ║
+# ║                                                                  ║
+# ║  ⚠ DO NOT COMMIT a populated config.yaml — it is .gitignored.   ║
+# ║                                                                  ║
+# ║  Sensitive values (sfUser, sfPassword) are NOT in this file.    ║
+# ║  They live in AIDP secrets — the `credential` key below names    ║
+# ║  the AIDP credential containing the `user` and `password` keys.  ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+
+dev:
+  # Snowflake source — bronze. `credential` is the AIDP credential
+  # name (Workspace → Credential store) holding the two keys
+  # `user` and `password`. Everything else is a Snowflake Spark
+  # connector option that goes straight into `.options(**snow)`.
+  snowflake:
+    credential:  snowflake_dev
+    sfUrl:       https://<account>.<region>.snowflakecomputing.com
+    sfDatabase:  RAPPI_SANDBOX
+    sfSchema:    SYNTH
+    sfWarehouse: COMPUTE_WH
+
+  # Bronze table to read.
+  source:
+    table: ORDER_DIMENSIONS_SYNTH
+
+  # Silver target — AIDP standard catalog (Delta).
+  silver:
+    catalog: silver
+    schema:  default
+    table:   order_dimensions
+
+  # Gold target — ADW/ALH via the external-catalog mount.
+  gold:
+    catalog: gold
+    schema:  admin
+    table:   orders_vertical_performance
+
+
+prod:
+  snowflake:
+    credential:  snowflake_prod
+    sfUrl:       https://<prod-account>.snowflakecomputing.com
+    sfDatabase:  RAPPI_PROD
+    sfSchema:    PUBLIC
+    sfWarehouse: PROD_WH
+
+  source:
+    table: ORDER_DIMENSIONS
+
+  silver:
+    catalog: silver
+    schema:  default
+    table:   order_dimensions
+
+  gold:
+    catalog: gold
+    schema:  admin
+    table:   orders_vertical_performance
