@@ -14,6 +14,11 @@
 
 
 dev:
+  # Row cap applied by 01/02 to the Snowflake pull / silver read.
+  # 0 = no limit; any positive int = LIMIT N (full table not scanned).
+  # Default convention: small int in dev, 0 in prod.
+  test_rows: 50000
+
   # Snowflake source — bronze. `credential` is the AIDP credential
   # name (Workspace → Credential store) holding the two keys
   # `user` and `password`. Everything else is a Snowflake Spark
@@ -43,6 +48,8 @@ dev:
 
 
 prod:
+  test_rows: 0   # full run — no limit
+
   snowflake:
     credential:  snowflake_prod
     sfUrl:       https://<prod-account>.snowflakecomputing.com
