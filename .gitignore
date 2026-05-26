@@ -4,5 +4,8 @@
 # Spark connector JARs — download from Maven Central, see README
 assets/aidp/jars/*.jar
 
+# Notebook runtime config — copy config.sample.yaml to config.yaml and fill in
+assets/aidp/config.yaml
+
 # macOS
 .DS_Store
