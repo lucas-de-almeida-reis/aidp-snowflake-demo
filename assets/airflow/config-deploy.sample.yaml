@@ -1,0 +1,101 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  Rappi AIDP Airflow — Deployment Configuration                   ║
+# ║                                                                  ║
+# ║  Copy this file to `config-deploy.yaml` and fill in your values. ║
+# ║  `deploy.py` reads it from the same directory and skips prompts  ║
+# ║  for any field set here. Anything left blank still falls back to ║
+# ║  the original interactive prompt or env-var override.            ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+
+# ─── AIDP runtime ──────────────────────────────────────────────────
+# These values become container env vars and drive the DAG. The Airflow
+# container signs every AIDP REST call via resource principal — no
+# private keys ever live in this file.
+aidp:
+  # AIDP region the DAG calls. Defaults to deploy.region if omitted.
+  region: sa-saopaulo-1
+
+  # AIDP dataLake OCID — AIDP Console → your dataLake → copy OCID.
+  id: ocid1.datalake.oc1.<region>.<DATALAKE_ID>
+
+  # Workspace OCID — AIDP Console → Workspace → details.
+  workspace_id: <WORKSPACE_ID>
+
+  # Job keys — create one AIDP job per notebook (Workspace → Jobs → Create),
+  # then paste each job's key here.
+  silver_job_key: <silver_job_key>   # runs 01_bronze_to_silver.ipynb
+  gold_job_key:   <gold_job_key>     # runs 02_silver_to_gold.ipynb
+
+
+# ─── Airflow admin login ───────────────────────────────────────────
+# `entrypoint.sh` creates this user on first container boot. Leave the
+# demo defaults if you don't care; pick something stronger for anything
+# exposed beyond a private subnet.
+airflow:
+  admin_user: admin
+  admin_password: admin
+
+
+# ─── Deploy target ─────────────────────────────────────────────────
+deploy:
+  # OCI region the Container Instance + VCN go into. If omitted, the
+  # script uses whatever region your ~/.oci/config has as default.
+  region: sa-saopaulo-1
+
+  # Compartment where the Container Instance, VCN, and OCIR repo live.
+  # Paste the compartment OCID. To use the tenancy root, paste the
+  # tenancy OCID. If omitted, the script shows a numbered picker.
+  compartment_id: ocid1.compartment.oc1..XXXXXX
+
+  # Cosmetic / sizing.
+  # display_name MUST be unique within the compartment — the script
+  # deletes any existing Container Instance whose display_name matches
+  # this value and recreates it.
+  display_name: rappi-aidp-airflow
+  shape: CI.Standard.E4.Flex
+  # Airflow webserver + scheduler need headroom; 2 OCPU / 4 GB is the
+  # comfortable demo floor. Bump for production / parallel DAGs.
+  cpus: 2
+  memory_gb: 4
+
+
+# ─── Container image ───────────────────────────────────────────────
+# The script tags the image as <region-key>.ocir.io/<namespace>/<repo>:<tag>
+# — only repo/tag are configurable here; region-key and namespace are
+# auto-derived from your tenancy.
+container:
+  repo: rappi-aidp-airflow
+  tag: latest
+
+
+# ─── IAM (advanced — usually leave alone) ──────────────────────────
+# Resource family used in the auto-generated policy. 'ai-data-platforms'
+# is the family that gates the AIDP control plane (the jobRuns API the
+# DAG calls). Override only if Oracle changes the family name.
+iam:
+  policy_resource: ai-data-platforms
+
+
+# ─── OCIR auth token (SENSITIVE) ───────────────────────────────────
+# ⚠ DO NOT COMMIT a populated config-deploy.yaml to git — this file
+#   is .gitignored for that reason. Keep your sample (this file) clean
+#   and put real values only in your local config-deploy.yaml.
+#
+# If left blank, the script lists your existing tokens and offers to
+# create a new one (max 2 per user — OCI limit). Generate manually at:
+#   OCI Console → Identity → Users → your user → Auth Tokens
+ocir:
+  auth_token:
+
+
+# ─── NOT in this file (intentionally) ──────────────────────────────
+# • Tenancy OCID, OCIR namespace, OCIR username — auto-discovered
+#   from ~/.oci/config every run; nothing to configure.
+# • OCI resource-principal credentials — injected by OCI Container
+#   Instances at runtime; never live in env vars or this file.
+# • ODI broker credentials — if you want Airflow's ODI report task to
+#   work, set ODI_BASE_URL / ODI_USERNAME / ODI_PASSWORD / ODI_TENANCY /
+#   ODI_DATABASE_NAME / ODI_CLOUD_DB_NAME / ODI_REPORT_WORKFLOW_ID /
+#   ODI_REPORT_WORKFLOW_NAME as shell env before running deploy.py.
+#   They're plumbed straight through to the container.

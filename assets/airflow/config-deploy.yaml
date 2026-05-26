@@ -1,0 +1,42 @@
+# Personal deploy config — DO NOT COMMIT.
+# (This file is .gitignored.)
+
+# ── AIDP runtime ──────────────────────────────────────────────────────
+# These flow straight into the container as env vars and drive the DAG.
+aidp:
+  region: sa-saopaulo-1
+  # AIDP dataLake OCID — paste from AIDP Console → Workspace → details.
+  id: ocid1.datalake.oc1.sa-saopaulo-1.REPLACE_ME
+  # Workspace OCID — taken from your original DAG.
+  workspace_id: 51abe3fa-37fd-46f9-a76f-7961117f9835
+  # Job keys — create one AIDP job per notebook, then paste the keys here.
+  silver_job_key: REPLACE_ME_silver_job_key   # runs 01_bronze_to_silver.ipynb
+  gold_job_key:   REPLACE_ME_gold_job_key     # runs 02_silver_to_gold.ipynb
+
+# ── Airflow admin login ───────────────────────────────────────────────
+# Used by entrypoint.sh on first container boot. Leave defaults for demo.
+airflow:
+  admin_user: admin
+  admin_password: admin
+
+# ── OCI Container Instance deploy target ──────────────────────────────
+deploy:
+  region: sa-saopaulo-1
+  compartment_id: ocid1.compartment.oc1..aaaaaaaaxtf7gpp5elpwzjub5odf5dapcvrrvvnytuupdvsk4x2hgb5v5zva
+  # Distinct from your chat-ui container — keeps both alive in the same compartment.
+  display_name: rappi-aidp-airflow
+  shape: CI.Standard.E4.Flex
+  # Airflow webserver + scheduler need headroom; 2 OCPU / 4 GB is the demo floor.
+  cpus: 2
+  memory_gb: 4
+
+container:
+  repo: rappi-aidp-airflow
+  tag: latest
+
+iam:
+  policy_resource: ai-data-platforms
+
+ocir:
+  # Same auth token you used before — keep this file out of git.
+  auth_token: "..fH1Xu}.GEnf1Q]]gL5"
