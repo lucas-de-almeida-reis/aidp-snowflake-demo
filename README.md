@@ -47,8 +47,7 @@ aidp-snowflake-demo/
     │   └── 3-verify-table.sql              # sanity counts
     ├── aidp/
     │   ├── jars/                           # uploaded to the AIDP cluster classpath
-    │   │   ├── spark-snowflake_2.12-3.1.1.jar
-    │   │   └── snowflake-jdbc-3.19.0.jar
+    │   │   └── (download from Maven Central — see step 2.1 below)
     │   └── notebooks/
     │       ├── 00_connector_smoke_test.ipynb   # one-off: confirm the connector works
     │       ├── 01_bronze_to_silver.ipynb       # Snowflake → silver.orders (Delta)
@@ -79,7 +78,11 @@ Snowflake user/role for the AIDP job needs `USAGE` on the warehouse + database +
 
 ### 2. AIDP workspace — silver + gold
 
-1. **Upload the JARs** under `assets/aidp/jars/` to your AIDP workspace and add them to the cluster classpath (Workspace → Cluster → Libraries → upload).
+1. **Download the Snowflake Spark connector JARs** from Maven Central into `assets/aidp/jars/` (they are not checked in — see [.gitignore](.gitignore)):
+   - [spark-snowflake_2.12-3.1.1.jar](https://repo1.maven.org/maven2/net/snowflake/spark-snowflake_2.12/3.1.1/spark-snowflake_2.12-3.1.1.jar)
+   - [snowflake-jdbc-3.19.0.jar](https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.19.0/snowflake-jdbc-3.19.0.jar)
+
+   Then upload both to your AIDP workspace and add them to the cluster classpath (Workspace → Cluster → Libraries → upload).
 2. **Upload both notebooks** under `assets/aidp/notebooks/` to AIDP (Workspace → Notebooks → upload).
 3. **Register each notebook as an AIDP Job** (Workspace → Jobs → Create) — one job per notebook:
    - `silver-from-snowflake` → `01_bronze_to_silver.ipynb`

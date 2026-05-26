@@ -1,0 +1,8 @@
+# Local Claude Code workspace
+.claude/
+
+# Spark connector JARs — download from Maven Central, see README
+assets/aidp/jars/*.jar
+
+# macOS
+.DS_Store
