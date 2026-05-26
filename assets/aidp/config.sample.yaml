@@ -19,7 +19,7 @@ dev:
   # `user` and `password`. Everything else is a Snowflake Spark
   # connector option that goes straight into `.options(**snow)`.
   snowflake:
-    credential:  snowflake-dev
+    credential:  snowflake_dev
     sfUrl:       https://<account>.<region>.snowflakecomputing.com
     sfDatabase:  RAPPI_SANDBOX
     sfSchema:    SYNTH
@@ -44,7 +44,7 @@ dev:
 
 prod:
   snowflake:
-    credential:  snowflake-prod
+    credential:  snowflake_prod
     sfUrl:       https://<prod-account>.snowflakecomputing.com
     sfDatabase:  RAPPI_PROD
     sfSchema:    PUBLIC
