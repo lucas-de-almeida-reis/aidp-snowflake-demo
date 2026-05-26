@@ -10,13 +10,18 @@
 # ║  Sensitive values (sfUser, sfPassword) are NOT in this file.    ║
 # ║  They live in AIDP secrets — the `credential` key below names    ║
 # ║  the AIDP credential containing the `user` and `password` keys.  ║
+# ║                                                                  ║
+# ║  Dev and prod use the SAME Snowflake account (same sfUrl), with  ║
+# ║  logical separation via database name only — RAPPI_DEV vs        ║
+# ║  RAPPI_PROD. Schema (BRONZE) and table (ORDER_DIMENSIONS) are    ║
+# ║  identical inside each DB; see assets/snowflake/*.sql.           ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 
 dev:
   # Row cap applied by 01/02 to the Snowflake pull / silver read.
   # 0 = no limit; any positive int = LIMIT N (full table not scanned).
-  # Default convention: small int in dev, 0 in prod.
+  # Convention: small int in dev, 0 in prod.
   test_rows: 50000
 
   # Snowflake source — bronze. `credential` is the AIDP credential
@@ -26,13 +31,13 @@ dev:
   snowflake:
     credential:  snowflake_dev
     sfUrl:       https://<account>.<region>.snowflakecomputing.com
-    sfDatabase:  RAPPI_SANDBOX
-    sfSchema:    SYNTH
+    sfDatabase:  RAPPI_DEV
+    sfSchema:    BRONZE
     sfWarehouse: COMPUTE_WH
 
   # Bronze table to read.
   source:
-    table: ORDER_DIMENSIONS_SYNTH
+    table: ORDER_DIMENSIONS
 
   # Silver target — AIDP standard catalog (Delta).
   silver:
@@ -52,10 +57,10 @@ prod:
 
   snowflake:
     credential:  snowflake_prod
-    sfUrl:       https://<prod-account>.snowflakecomputing.com
+    sfUrl:       https://<account>.<region>.snowflakecomputing.com   # same account as dev
     sfDatabase:  RAPPI_PROD
-    sfSchema:    PUBLIC
-    sfWarehouse: PROD_WH
+    sfSchema:    BRONZE
+    sfWarehouse: COMPUTE_WH
 
   source:
     table: ORDER_DIMENSIONS

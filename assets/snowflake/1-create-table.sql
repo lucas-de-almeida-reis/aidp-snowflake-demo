@@ -1,4 +1,19 @@
-CREATE OR REPLACE TABLE ORDER_DIMENSIONS_SYNTH (
+-- ╔══════════════════════════════════════════════════════════════════╗
+-- ║  1 — Create the bronze table                                     ║
+-- ║                                                                  ║
+-- ║  Run this once per env. Change ONE line below to switch:         ║
+-- ║                                                                  ║
+-- ║      USE DATABASE RAPPI_DEV;     -- ← swap to RAPPI_PROD for prod║
+-- ║                                                                  ║
+-- ║  Schema + table names are identical in both DBs — that's the     ║
+-- ║  whole point of database-level separation.                       ║
+-- ╚══════════════════════════════════════════════════════════════════╝
+
+-- ▼ change to RAPPI_PROD when seeding prod
+USE DATABASE RAPPI_DEV;
+USE SCHEMA   BRONZE;
+
+CREATE OR REPLACE TABLE ORDER_DIMENSIONS (
   -- Identity
   ORDER_ID                NUMBER(18,0)  NOT NULL,
   USER_ID                 NUMBER(18,0)  NOT NULL,

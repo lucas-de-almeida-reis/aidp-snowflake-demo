@@ -1,11 +1,31 @@
-SELECT COUNT(*) AS total_rows FROM ORDER_DIMENSIONS_SYNTH;
+-- ╔══════════════════════════════════════════════════════════════════╗
+-- ║  3 — Verify bronze                                               ║
+-- ║                                                                  ║
+-- ║  Run against whichever DB you just seeded:                       ║
+-- ║      USE DATABASE RAPPI_DEV;       -- or RAPPI_PROD              ║
+-- ║      USE SCHEMA   BRONZE;                                        ║
+-- ╚══════════════════════════════════════════════════════════════════╝
+
+-- ▼ change for prod
+USE DATABASE RAPPI_DEV;
+USE SCHEMA   BRONZE;
+
+SELECT CURRENT_DATABASE() AS db,
+       CURRENT_SCHEMA()   AS schema,
+       COUNT(*)           AS total_rows
+FROM ORDER_DIMENSIONS;
 
 SELECT COUNTRY_CODE, COUNT(*) AS n
-FROM ORDER_DIMENSIONS_SYNTH GROUP BY 1 ORDER BY 2 DESC;
+FROM ORDER_DIMENSIONS
+GROUP BY 1 ORDER BY 2 DESC;
 
-SELECT ORDER_STATUS, COUNT(*) AS n,
+SELECT ORDER_STATUS,
+       COUNT(*) AS n,
        ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 2) AS pct
-FROM ORDER_DIMENSIONS_SYNTH GROUP BY 1;
+FROM ORDER_DIMENSIONS
+GROUP BY 1;
 
-SELECT DATE_TRUNC('month', ORDER_CREATED_AT) AS mo, COUNT(*) AS n
-FROM ORDER_DIMENSIONS_SYNTH GROUP BY 1 ORDER BY 1;
+SELECT DATE_TRUNC('month', ORDER_CREATED_AT) AS mo,
+       COUNT(*) AS n
+FROM ORDER_DIMENSIONS
+GROUP BY 1 ORDER BY 1;
