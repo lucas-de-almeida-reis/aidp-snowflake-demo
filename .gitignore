@@ -4,6 +4,9 @@
 # Notebook runtime config — copy config.sample.yaml to config.yaml and fill in
 assets/aidp/config.yaml
 
+# Airflow deploy config — contains OCIR auth token + admin password
+assets/airflow/config-deploy.yaml
+
 # Private keys (OCI API keys, etc.) — NEVER commit
 *.pem
 

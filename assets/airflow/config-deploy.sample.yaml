@@ -29,12 +29,15 @@ aidp:
 
 
 # ─── Airflow admin login ───────────────────────────────────────────
-# `entrypoint.sh` creates this user on first container boot. Leave the
-# demo defaults if you don't care; pick something stronger for anything
-# exposed beyond a private subnet.
+# `entrypoint.sh` creates this user on first container boot. The
+# container's IP is public on port 8080 — `entrypoint.sh` REFUSES to
+# boot if `admin_password` is left as "admin" or is empty.
+#
+# Generate a strong password:
+#   python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 airflow:
-  admin_user: admin
-  admin_password: admin
+  admin_user: <pick-a-username>
+  admin_password: <generated-token>   # see above
 
 
 # ─── Deploy target ─────────────────────────────────────────────────

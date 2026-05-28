@@ -901,8 +901,8 @@ def main():
 
     def _print_post_deploy_notes():
         dg          = cfg.get("dg_ocid", "<your dynamic group OCID>")
-        admin_user  = os.environ.get("AIRFLOW_ADMIN_USER",     "admin")
-        admin_pass  = os.environ.get("AIRFLOW_ADMIN_PASSWORD", "admin")
+        admin_user  = os.environ["AIRFLOW_ADMIN_USER"]
+        admin_pass  = os.environ["AIRFLOW_ADMIN_PASSWORD"]
         print(f"""
   ┌─ If you see HTTP 403/404 from the AIDP jobRuns API ─────────────────┐
   │                                                                     │
