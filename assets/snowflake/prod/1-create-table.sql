@@ -1,16 +1,11 @@
 -- ╔══════════════════════════════════════════════════════════════════╗
--- ║  1 — Create the bronze table                                     ║
--- ║                                                                  ║
--- ║  Run this once per env. Change ONE line below to switch:         ║
--- ║                                                                  ║
--- ║      USE DATABASE RAPPI_DEV;     -- ← swap to RAPPI_PROD for prod║
--- ║                                                                  ║
--- ║  Schema + table names are identical in both DBs — that's the     ║
--- ║  whole point of database-level separation.                       ║
+-- ║  PROD — 1. Create the bronze table in RAPPI_PROD                ║
+-- ║  Self-contained: creates DB + schema if missing, then table.    ║
 -- ╚══════════════════════════════════════════════════════════════════╝
 
--- ▼ change to RAPPI_PROD when seeding prod
-USE DATABASE RAPPI_DEV;
+CREATE DATABASE IF NOT EXISTS RAPPI_PROD;
+USE DATABASE RAPPI_PROD;
+CREATE SCHEMA IF NOT EXISTS BRONZE;
 USE SCHEMA   BRONZE;
 
 CREATE OR REPLACE TABLE ORDER_DIMENSIONS (

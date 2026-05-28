@@ -1,20 +1,11 @@
 -- ╔══════════════════════════════════════════════════════════════════╗
--- ║  2 — Insert synthetic orders                                     ║
--- ║                                                                  ║
--- ║  Run once per env. Change DB + row count to match the env:       ║
--- ║                                                                  ║
--- ║      dev  : USE DATABASE RAPPI_DEV  ; ROW_COUNT =    100000      ║
--- ║      prod : USE DATABASE RAPPI_PROD ; ROW_COUNT = 10000000       ║
--- ║                                                                  ║
--- ║  Dev gets a smaller sample so iteration on AIDP is fast; prod    ║
--- ║  gets the full 10M-row demo. Notebook still caps its read via    ║
--- ║  config.yaml's `test_rows` (50k in dev, no limit in prod).       ║
+-- ║  DEV — 2. Seed synthetic orders into RAPPI_DEV              ║
+-- ║  100k rows — fast iteration                                      ║
 -- ╚══════════════════════════════════════════════════════════════════╝
 
--- ▼ change for prod
 USE DATABASE RAPPI_DEV;
 USE SCHEMA   BRONZE;
-SET ROW_COUNT = 100000;   -- prod: 10000000
+SET ROW_COUNT = 100000;
 
 INSERT INTO ORDER_DIMENSIONS
 WITH base AS (
