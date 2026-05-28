@@ -13,8 +13,9 @@
 # ║                                                                  ║
 # ║  Dev and prod use the SAME Snowflake account (same sfUrl), with  ║
 # ║  logical separation via database name only — RAPPI_DEV vs        ║
-# ║  RAPPI_PROD. Schema (BRONZE) and table (ORDER_DIMENSIONS) are    ║
-# ║  identical inside each DB; see assets/snowflake/*.sql.           ║
+# ║  RAPPI_PROD. AIDP-side, dev and prod each get their own schemas  ║
+# ║  under the Master catalog: silver_dev/silver_prod (Delta),       ║
+# ║  gold_dev/gold_prod (external mounts to ADW).                    ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 
@@ -42,19 +43,19 @@ dev:
   source:
     table: ORDER_DIMENSIONS
 
-  # Silver target — AIDP default Spark catalog (Delta).
-  # Leave `catalog` empty so the notebook uses just `schema.table`
-  # (2-part name). AIDP's Spark runs single-catalog by default; a
-  # 3-part name like `silver.silver.order_dimensions` fails parsing.
+  # Silver + gold targets — AIDP Master catalog (default).
+  # Leave `catalog` empty so the notebook builds a 2-part name
+  # (schema.table). AIDP runs single-catalog Spark by default; a
+  # 3-part name like `silver.silver_dev.order_dimensions` is parsed
+  # as schema `silver.silver_dev` and rejected as invalid.
   silver:
     catalog: ''
-    schema:  silver
+    schema:  silver_dev        # AIDP schema for dev silver Delta
     table:   order_dimensions
 
-  # Gold target — ADW/ALH via the external-catalog mount.
   gold:
-    catalog: gold
-    schema:  admin
+    catalog: ''
+    schema:  gold_dev          # AIDP schema for dev gold (external mount to ADW)
     table:   orders_vertical_performance
 
 
@@ -74,11 +75,11 @@ prod:
     table: ORDER_DIMENSIONS
 
   silver:
-    catalog: silver
-    schema:  default
+    catalog: ''
+    schema:  silver_prod
     table:   order_dimensions
 
   gold:
-    catalog: gold
-    schema:  admin
+    catalog: ''
+    schema:  gold_prod
     table:   orders_vertical_performance
