@@ -42,10 +42,13 @@ dev:
   source:
     table: ORDER_DIMENSIONS
 
-  # Silver target — AIDP standard catalog (Delta).
+  # Silver target — AIDP default Spark catalog (Delta).
+  # Leave `catalog` empty so the notebook uses just `schema.table`
+  # (2-part name). AIDP's Spark runs single-catalog by default; a
+  # 3-part name like `silver.silver.order_dimensions` fails parsing.
   silver:
-    catalog: silver
-    schema:  default
+    catalog: ''
+    schema:  silver
     table:   order_dimensions
 
   # Gold target — ADW/ALH via the external-catalog mount.
