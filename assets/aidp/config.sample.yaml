@@ -52,7 +52,7 @@ dev:
   # Gold target — AIDP catalog (external mount to ADW/ALH).
   gold:
     catalog: gold_dev
-    schema:  default
+    schema:  ADMIN          # ADW schema (Oracle UPPERCASE)
     table:   orders_vertical_performance
 
 
@@ -78,5 +78,5 @@ prod:
 
   gold:
     catalog: gold_prod
-    schema:  default
+    schema:  ADMIN          # ADW schema (Oracle UPPERCASE)
     table:   orders_vertical_performance
