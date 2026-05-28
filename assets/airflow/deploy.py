@@ -77,11 +77,12 @@ def _load_deploy_config():
         # AIDP runtime — passed straight through to the container as env vars.
         ("aidp", "region"):              "AIDP_REGION",
         ("aidp", "id"):                  "AIDP_ID",
-        ("aidp", "workspace_id"):        "AIDP_WORKSPACE_ID",
-        ("aidp", "jobs", "dev",  "bronze"): "AIDP_DEV_BRONZE_JOB_KEY",
-        ("aidp", "jobs", "dev",  "gold"):   "AIDP_DEV_GOLD_JOB_KEY",
-        ("aidp", "jobs", "prod", "bronze"): "AIDP_PROD_BRONZE_JOB_KEY",
-        ("aidp", "jobs", "prod", "gold"):   "AIDP_PROD_GOLD_JOB_KEY",
+        ("aidp", "jobs", "dev",  "workspace_id"): "AIDP_DEV_WORKSPACE_ID",
+        ("aidp", "jobs", "dev",  "bronze"):       "AIDP_DEV_BRONZE_JOB_KEY",
+        ("aidp", "jobs", "dev",  "gold"):         "AIDP_DEV_GOLD_JOB_KEY",
+        ("aidp", "jobs", "prod", "workspace_id"): "AIDP_PROD_WORKSPACE_ID",
+        ("aidp", "jobs", "prod", "bronze"):       "AIDP_PROD_BRONZE_JOB_KEY",
+        ("aidp", "jobs", "prod", "gold"):         "AIDP_PROD_GOLD_JOB_KEY",
         # Airflow admin login (defaults are admin/admin if unset).
         ("airflow", "admin_user"):       "AIRFLOW_ADMIN_USER",
         ("airflow", "admin_password"):   "AIRFLOW_ADMIN_PASSWORD",
@@ -348,16 +349,18 @@ def discover_config():
         return v
 
     aidp_region        = os.environ.get("AIDP_REGION") or region
-    aidp_id            = _require("AIDP_ID",            "AIDP dataLake OCID")
-    aidp_workspace_id  = _require("AIDP_WORKSPACE_ID",  "AIDP workspace OCID")
-    aidp_dev_bronze    = _require("AIDP_DEV_BRONZE_JOB_KEY",  "AIDP dev bronze→silver job key")
-    aidp_dev_gold      = _require("AIDP_DEV_GOLD_JOB_KEY",    "AIDP dev silver→gold job key")
-    aidp_prod_bronze   = _require("AIDP_PROD_BRONZE_JOB_KEY", "AIDP prod bronze→silver job key")
-    aidp_prod_gold     = _require("AIDP_PROD_GOLD_JOB_KEY",   "AIDP prod silver→gold job key")
+    aidp_id            = _require("AIDP_ID",                    "AIDP dataLake OCID")
+    aidp_dev_ws        = _require("AIDP_DEV_WORKSPACE_ID",      "AIDP dev workspace UUID")
+    aidp_dev_bronze    = _require("AIDP_DEV_BRONZE_JOB_KEY",    "AIDP dev bronze→silver job key")
+    aidp_dev_gold      = _require("AIDP_DEV_GOLD_JOB_KEY",      "AIDP dev silver→gold job key")
+    aidp_prod_ws       = _require("AIDP_PROD_WORKSPACE_ID",     "AIDP prod workspace UUID")
+    aidp_prod_bronze   = _require("AIDP_PROD_BRONZE_JOB_KEY",   "AIDP prod bronze→silver job key")
+    aidp_prod_gold     = _require("AIDP_PROD_GOLD_JOB_KEY",     "AIDP prod silver→gold job key")
 
-    print(f"  AIDP region:    {aidp_region}")
-    print(f"  AIDP dataLake:  {aidp_id}")
-    print(f"  AIDP workspace: {aidp_workspace_id}")
+    print(f"  AIDP region:        {aidp_region}")
+    print(f"  AIDP dataLake:      {aidp_id}")
+    print(f"  AIDP dev  workspace:{aidp_dev_ws}")
+    print(f"  AIDP prod workspace:{aidp_prod_ws}")
 
     repo = os.environ.get("OCIR_REPO", "rappi-aidp-airflow")
     tag = os.environ.get("OCIR_TAG", "latest")
@@ -396,11 +399,12 @@ def discover_config():
         "display_name": display_name,
         "ad": ad,
         # AIDP runtime — wired into container env in deploy_container()
-        "aidp_region":          aidp_region,
-        "aidp_id":              aidp_id,
-        "aidp_workspace_id":    aidp_workspace_id,
+        "aidp_region":              aidp_region,
+        "aidp_id":                  aidp_id,
+        "aidp_dev_workspace_id":    aidp_dev_ws,
         "aidp_dev_bronze_job_key":  aidp_dev_bronze,
         "aidp_dev_gold_job_key":    aidp_dev_gold,
+        "aidp_prod_workspace_id":   aidp_prod_ws,
         "aidp_prod_bronze_job_key": aidp_prod_bronze,
         "aidp_prod_gold_job_key":   aidp_prod_gold,
     }
@@ -787,9 +791,10 @@ def _build_container_env(cfg):
         "PRIVATE_KEY":         private_key_pem,
         "AIDP_REGION":         cfg["aidp_region"],
         "AIDP_ID":             cfg["aidp_id"],
-        "AIDP_WORKSPACE_ID":   cfg["aidp_workspace_id"],
+        "AIDP_DEV_WORKSPACE_ID":    cfg["aidp_dev_workspace_id"],
         "AIDP_DEV_BRONZE_JOB_KEY":  cfg["aidp_dev_bronze_job_key"],
         "AIDP_DEV_GOLD_JOB_KEY":    cfg["aidp_dev_gold_job_key"],
+        "AIDP_PROD_WORKSPACE_ID":   cfg["aidp_prod_workspace_id"],
         "AIDP_PROD_BRONZE_JOB_KEY": cfg["aidp_prod_bronze_job_key"],
         "AIDP_PROD_GOLD_JOB_KEY":   cfg["aidp_prod_gold_job_key"],
     }
@@ -892,13 +897,14 @@ def main():
   Shape:            {cfg['shape']} ({cfg['cpus']} OCPU, {cfg['memory_gb']} GB)
   AD:               {cfg['ad']}
   Display Name:     {cfg['display_name']}
-  AIDP region:      {cfg['aidp_region']}
-  AIDP dataLake:    {cfg['aidp_id']}
-  AIDP workspace:   {cfg['aidp_workspace_id']}
-  dev  bronze→silver:  {cfg['aidp_dev_bronze_job_key']}
-  dev  silver→gold:    {cfg['aidp_dev_gold_job_key']}
-  prod bronze→silver:  {cfg['aidp_prod_bronze_job_key']}
-  prod silver→gold:    {cfg['aidp_prod_gold_job_key']}
+  AIDP region:           {cfg['aidp_region']}
+  AIDP dataLake:         {cfg['aidp_id']}
+  AIDP dev  workspace:   {cfg['aidp_dev_workspace_id']}
+  AIDP prod workspace:   {cfg['aidp_prod_workspace_id']}
+  dev  bronze→silver:    {cfg['aidp_dev_bronze_job_key']}
+  dev  silver→gold:      {cfg['aidp_dev_gold_job_key']}
+  prod bronze→silver:    {cfg['aidp_prod_bronze_job_key']}
+  prod silver→gold:      {cfg['aidp_prod_gold_job_key']}
 """)
 
     if not _AUTO:

@@ -23,23 +23,20 @@ from cryptography.hazmat.backends import default_backend
 # configured at the AIDP level with the right AIDP_ENV env var, so
 # the DAG only triggers them — it doesn't pass env separately.
 
-JOB_KEYS = {
+# Each env has its own workspace AND its own pair of jobs.
+ENV_CONFIG = {
     "dev": {
+        "workspace_id":     os.environ["AIDP_DEV_WORKSPACE_ID"],
         "bronze_to_silver": os.environ["AIDP_DEV_BRONZE_JOB_KEY"],
         "silver_to_gold":   os.environ["AIDP_DEV_GOLD_JOB_KEY"],
     },
     "prod": {
+        "workspace_id":     os.environ["AIDP_PROD_WORKSPACE_ID"],
         "bronze_to_silver": os.environ["AIDP_PROD_BRONZE_JOB_KEY"],
         "silver_to_gold":   os.environ["AIDP_PROD_GOLD_JOB_KEY"],
     },
 }
 
-# Same workspace for both envs — only the job keys differ.
-# Overridable via env so deploy.yaml can drive it.
-WORKSPACE_ID = os.environ.get(
-    "AIDP_WORKSPACE_ID",
-    "51abe3fa-37fd-46f9-a76f-7961117f9835",
-)
 AIDP_REGION = os.environ.get("AIDP_REGION", "sa-saopaulo-1")
 
 
@@ -122,11 +119,11 @@ def oci_sign_request(method, url, body=None):
 # TASKS — AIDP trigger / wait (parameterised)
 # ==========================================
 
-def trigger_aidp_job(job_key, xcom_key, **context):
+def trigger_aidp_job(job_key, workspace_id, xcom_key, **context):
     AIDP_ID = os.environ["AIDP_ID"]
     url = (
         f"https://aidp.{AIDP_REGION}.oci.oraclecloud.com/20240831/"
-        f"dataLakes/{AIDP_ID}/workspaces/{WORKSPACE_ID}/jobRuns"
+        f"dataLakes/{AIDP_ID}/workspaces/{workspace_id}/jobRuns"
     )
     body = {"jobKey": job_key}
 
@@ -135,20 +132,20 @@ def trigger_aidp_job(job_key, xcom_key, **context):
 
     if response.status_code != 201:
         raise AirflowException(
-            f"Failed to start job {job_key}: {response.text}"
+            f"Failed to start job {job_key} in workspace {workspace_id}: {response.text}"
         )
 
     job_run_key = response.json()["key"]
     context["ti"].xcom_push(key=xcom_key, value=job_run_key)
 
 
-def wait_for_aidp_job(xcom_key, **context):
+def wait_for_aidp_job(workspace_id, xcom_key, **context):
     AIDP_ID = os.environ["AIDP_ID"]
     job_run_key = context["ti"].xcom_pull(key=xcom_key)
 
     url = (
         f"https://aidp.{AIDP_REGION}.oci.oraclecloud.com/20240831/"
-        f"dataLakes/{AIDP_ID}/workspaces/{WORKSPACE_ID}/jobRuns/{job_run_key}"
+        f"dataLakes/{AIDP_ID}/workspaces/{workspace_id}/jobRuns/{job_run_key}"
     )
 
     while True:
@@ -174,7 +171,8 @@ def wait_for_aidp_job(xcom_key, **context):
 # ==========================================
 
 def make_pipeline_dag(env):
-    keys = JOB_KEYS[env]
+    cfg = ENV_CONFIG[env]
+    workspace_id = cfg["workspace_id"]
 
     with DAG(
         dag_id=f"rappi_medallion_{env}",
@@ -187,27 +185,35 @@ def make_pipeline_dag(env):
             task_id="trigger_bronze_to_silver",
             python_callable=trigger_aidp_job,
             op_kwargs={
-                "job_key": keys["bronze_to_silver"],
-                "xcom_key": "bronze_run_key",
+                "job_key":      cfg["bronze_to_silver"],
+                "workspace_id": workspace_id,
+                "xcom_key":     "bronze_run_key",
             },
         )
         wait_silver = PythonOperator(
             task_id="wait_bronze_to_silver",
             python_callable=wait_for_aidp_job,
-            op_kwargs={"xcom_key": "bronze_run_key"},
+            op_kwargs={
+                "workspace_id": workspace_id,
+                "xcom_key":     "bronze_run_key",
+            },
         )
         trigger_gold = PythonOperator(
             task_id="trigger_silver_to_gold",
             python_callable=trigger_aidp_job,
             op_kwargs={
-                "job_key": keys["silver_to_gold"],
-                "xcom_key": "gold_run_key",
+                "job_key":      cfg["silver_to_gold"],
+                "workspace_id": workspace_id,
+                "xcom_key":     "gold_run_key",
             },
         )
         wait_gold = PythonOperator(
             task_id="wait_silver_to_gold",
             python_callable=wait_for_aidp_job,
-            op_kwargs={"xcom_key": "gold_run_key"},
+            op_kwargs={
+                "workspace_id": workspace_id,
+                "xcom_key":     "gold_run_key",
+            },
         )
         trigger_silver >> wait_silver >> trigger_gold >> wait_gold
 
