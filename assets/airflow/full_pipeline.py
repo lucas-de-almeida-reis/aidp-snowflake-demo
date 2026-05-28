@@ -41,7 +41,6 @@ WORKSPACE_ID = os.environ.get(
     "51abe3fa-37fd-46f9-a76f-7961117f9835",
 )
 AIDP_REGION = os.environ.get("AIDP_REGION", "sa-saopaulo-1")
-ODI_REPORT_WORKFLOW_ID = "8b996467-4a59-40cf-a432-2b88e3cec8e6"
 
 
 # ==========================================
@@ -171,97 +170,6 @@ def wait_for_aidp_job(xcom_key, **context):
 
 
 # ==========================================
-# TASKS — ODI report workflow
-# ==========================================
-
-def get_odi_token(**context):
-    ODI_BASE_URL = os.environ["ODI_BASE_URL"]
-
-    url = f"{ODI_BASE_URL}/odi/broker/pdbcs/public/v1/token"
-
-    body = {
-        "username": os.environ["ODI_USERNAME"],
-        "password": os.environ["ODI_PASSWORD"],
-        "tenant_name": os.environ["ODI_TENANCY"],
-        "database_name": os.environ["ODI_DATABASE_NAME"],
-        "cloud_database_name": os.environ["ODI_CLOUD_DB_NAME"],
-        "grant_type": "password"
-    }
-
-    response = requests.post(url, json=body)
-
-    if response.status_code != 200:
-        raise AirflowException(f"Failed to get ODI token: {response.text}")
-
-    access_token = response.json()["access_token"]
-    context["ti"].xcom_push(key="odi_token", value=access_token)
-
-
-def submit_report(**context):
-    ODI_BASE_URL = os.environ["ODI_BASE_URL"]
-    token = context["ti"].xcom_pull(key="odi_token")
-
-    url = f"{ODI_BASE_URL}/odi/dt-rest/v2/jobs/submit"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    body = {
-        "action": "RUN",
-        "objectType": "WORKFLOW",
-        "objectId": ODI_REPORT_WORKFLOW_ID,
-        "objectName": "wf01",
-        "synchronous": False,
-        "ignorePreviousRunningJob": True,
-        "jobName": "airflow-report",
-        "jobVariables": {}
-    }
-
-    response = requests.post(url, headers=headers, json=body)
-
-    if response.status_code not in [200, 201]:
-        raise AirflowException(f"Failed to submit report: {response.text}")
-
-    job_id = response.json()["jobId"]
-    context["ti"].xcom_push(key="odi_job_id", value=job_id)
-
-
-def wait_for_report(**context):
-    ODI_BASE_URL = os.environ["ODI_BASE_URL"]
-    token = context["ti"].xcom_pull(key="odi_token")
-    job_id = context["ti"].xcom_pull(key="odi_job_id")
-
-    url = f"{ODI_BASE_URL}/odi/dt-rest/v2/jobs"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    while True:
-        response = requests.post(url, headers=headers, json={})
-
-        if response.status_code != 200:
-            raise AirflowException(f"Failed to fetch ODI jobs: {response.text}")
-
-        jobs = response.json()
-
-        for job in jobs:
-            if job["jobId"] == job_id:
-                status = job["status"]
-
-                if status == "DONE":
-                    return
-
-                if status in ["ERROR", "CANCELLED"]:
-                    raise AirflowException(f"ODI Job failed: {status}")
-
-        time.sleep(30)
-
-
-# ==========================================
 # DAG FACTORY — one per env
 # ==========================================
 
@@ -273,7 +181,7 @@ def make_pipeline_dag(env):
         start_date=days_ago(1),
         schedule_interval=None,
         catchup=False,
-        tags=["oci", "aidp", "odi", env],
+        tags=["oci", "aidp", env],
     ) as dag:
         trigger_silver = PythonOperator(
             task_id="trigger_bronze_to_silver",
@@ -301,28 +209,7 @@ def make_pipeline_dag(env):
             python_callable=wait_for_aidp_job,
             op_kwargs={"xcom_key": "gold_run_key"},
         )
-        get_token = PythonOperator(
-            task_id="get_odi_token",
-            python_callable=get_odi_token,
-        )
-        submit_rpt = PythonOperator(
-            task_id="submit_report_workflow",
-            python_callable=submit_report,
-        )
-        wait_rpt = PythonOperator(
-            task_id="wait_for_report_completion",
-            python_callable=wait_for_report,
-        )
-
-        (
-            trigger_silver
-            >> wait_silver
-            >> trigger_gold
-            >> wait_gold
-            >> get_token
-            >> submit_rpt
-            >> wait_rpt
-        )
+        trigger_silver >> wait_silver >> trigger_gold >> wait_gold
 
     return dag
 

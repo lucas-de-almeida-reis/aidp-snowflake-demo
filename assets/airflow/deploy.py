@@ -761,15 +761,10 @@ def setup_networking(cfg):
 
 # ── Container Instance ───────────────────────────────────────────────
 
-# Names of optional env vars to forward into the container if the operator
-# happens to have them set locally. The Airflow DAG's ODI tasks fail if
-# their vars aren't present, so passing them through here is the easiest
-# path; anything missing locally can also be added later via the OCI
-# Console (Container Instance → Edit → Environment Variables).
+# Optional env vars forwarded into the container if set locally.
+# Anything missing here can also be added later via the OCI Console
+# (Container Instance → Edit → Environment Variables).
 _OPTIONAL_ENV_PASSTHROUGH = (
-    "ODI_BASE_URL", "ODI_USERNAME", "ODI_PASSWORD", "ODI_TENANCY",
-    "ODI_DATABASE_NAME", "ODI_CLOUD_DB_NAME",
-    "ODI_REPORT_WORKFLOW_ID", "ODI_REPORT_WORKFLOW_NAME",
     "AIRFLOW_ADMIN_USER", "AIRFLOW_ADMIN_PASSWORD",
 )
 

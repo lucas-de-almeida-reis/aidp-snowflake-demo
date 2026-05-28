@@ -103,10 +103,6 @@ ocir:
 # ─── NOT in this file (intentionally) ──────────────────────────────
 # • Tenancy OCID, OCIR namespace, OCIR username — auto-discovered
 #   from ~/.oci/config every run; nothing to configure.
-# • OCI resource-principal credentials — injected by OCI Container
-#   Instances at runtime; never live in env vars or this file.
-# • ODI broker credentials — if you want Airflow's ODI report task to
-#   work, set ODI_BASE_URL / ODI_USERNAME / ODI_PASSWORD / ODI_TENANCY /
-#   ODI_DATABASE_NAME / ODI_CLOUD_DB_NAME / ODI_REPORT_WORKFLOW_ID /
-#   ODI_REPORT_WORKFLOW_NAME as shell env before running deploy.py.
-#   They're plumbed straight through to the container.
+# • OCI signing credentials (TENANCY_ID/USER_ID/FINGERPRINT/PRIVATE_KEY)
+#   — auto-extracted from ~/.oci/config and baked into the container
+#   env by deploy.py.
