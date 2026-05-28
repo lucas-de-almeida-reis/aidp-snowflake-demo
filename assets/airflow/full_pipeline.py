@@ -16,6 +16,31 @@ from cryptography.hazmat.backends import default_backend
 
 
 # ==========================================
+# CONFIG — per-env AIDP job keys
+# ==========================================
+# Two AIDP jobs per env (one per notebook), passed in as env vars by
+# deploy.py from config-deploy.yaml. The AIDP jobs themselves are
+# configured at the AIDP level with the right AIDP_ENV env var, so
+# the DAG only triggers them — it doesn't pass env separately.
+
+# Each env has its own workspace AND its own pair of jobs.
+ENV_CONFIG = {
+    "dev": {
+        "workspace_id":     os.environ["AIDP_DEV_WORKSPACE_ID"],
+        "bronze_to_silver": os.environ["AIDP_DEV_BRONZE_JOB_KEY"],
+        "silver_to_gold":   os.environ["AIDP_DEV_GOLD_JOB_KEY"],
+    },
+    "prod": {
+        "workspace_id":     os.environ["AIDP_PROD_WORKSPACE_ID"],
+        "bronze_to_silver": os.environ["AIDP_PROD_BRONZE_JOB_KEY"],
+        "silver_to_gold":   os.environ["AIDP_PROD_GOLD_JOB_KEY"],
+    },
+}
+
+AIDP_REGION = os.environ.get("AIDP_REGION", "sa-saopaulo-1")
+
+
+# ==========================================
 # OCI SIGNING FUNCTION (AIDP)
 # ==========================================
 
@@ -91,39 +116,37 @@ def oci_sign_request(method, url, body=None):
 
 
 # ==========================================
-# TASK 1 - TRIGGER AIDP JOB
+# TASKS — AIDP trigger / wait (parameterised)
 # ==========================================
 
-def trigger_job(**context):
+def trigger_aidp_job(job_key, workspace_id, xcom_key, **context):
     AIDP_ID = os.environ["AIDP_ID"]
-
-    url = f"https://aidp.sa-saopaulo-1.oci.oraclecloud.com/20240831/" \
-          f"dataLakes/{AIDP_ID}/workspaces/" \
-          f"51abe3fa-37fd-46f9-a76f-7961117f9835/jobRuns"
-
-    body = {"jobKey": "7b71aac0-6ecc-4a9a-a06d-0c439775ffed"}
+    url = (
+        f"https://aidp.{AIDP_REGION}.oci.oraclecloud.com/20240831/"
+        f"dataLakes/{AIDP_ID}/workspaces/{workspace_id}/jobRuns"
+    )
+    body = {"jobKey": job_key}
 
     headers, body_json = oci_sign_request("post", url, body)
     response = requests.post(url, headers=headers, data=body_json)
 
     if response.status_code != 201:
-        raise AirflowException(f"Failed to start job: {response.text}")
+        raise AirflowException(
+            f"Failed to start job {job_key} in workspace {workspace_id}: {response.text}"
+        )
 
     job_run_key = response.json()["key"]
-    context["ti"].xcom_push(key="job_run_key", value=job_run_key)
+    context["ti"].xcom_push(key=xcom_key, value=job_run_key)
 
 
-# ==========================================
-# TASK 2 - WAIT AIDP COMPLETION
-# ==========================================
-
-def wait_for_job(**context):
+def wait_for_aidp_job(workspace_id, xcom_key, **context):
     AIDP_ID = os.environ["AIDP_ID"]
-    job_run_key = context["ti"].xcom_pull(key="job_run_key")
+    job_run_key = context["ti"].xcom_pull(key=xcom_key)
 
-    url = f"https://aidp.sa-saopaulo-1.oci.oraclecloud.com/20240831/" \
-          f"dataLakes/{AIDP_ID}/workspaces/" \
-          f"51abe3fa-37fd-46f9-a76f-7961117f9835/jobRuns/{job_run_key}"
+    url = (
+        f"https://aidp.{AIDP_REGION}.oci.oraclecloud.com/20240831/"
+        f"dataLakes/{AIDP_ID}/workspaces/{workspace_id}/jobRuns/{job_run_key}"
+    )
 
     while True:
         headers, _ = oci_sign_request("get", url)
@@ -138,127 +161,65 @@ def wait_for_job(**context):
             return
 
         if status in ["FAILED", "CANCELED"]:
-            raise AirflowException(f"AIDP Job failed: {status}")
+            raise AirflowException(f"AIDP Job {job_run_key} ended in {status}")
 
         time.sleep(30)
 
 
 # ==========================================
-# TASK 3 - GET ODI TOKEN
+# DAG FACTORY — one per env
 # ==========================================
 
-def get_odi_token(**context):
-    ODI_BASE_URL = os.environ["ODI_BASE_URL"]
+def make_pipeline_dag(env):
+    cfg = ENV_CONFIG[env]
+    workspace_id = cfg["workspace_id"]
 
-    url = f"{ODI_BASE_URL}/odi/broker/pdbcs/public/v1/token"
+    with DAG(
+        dag_id=f"rappi_medallion_{env}",
+        start_date=days_ago(1),
+        schedule_interval=None,
+        catchup=False,
+        tags=["oci", "aidp", env],
+    ) as dag:
+        trigger_silver = PythonOperator(
+            task_id="trigger_bronze_to_silver",
+            python_callable=trigger_aidp_job,
+            op_kwargs={
+                "job_key":      cfg["bronze_to_silver"],
+                "workspace_id": workspace_id,
+                "xcom_key":     "bronze_run_key",
+            },
+        )
+        wait_silver = PythonOperator(
+            task_id="wait_bronze_to_silver",
+            python_callable=wait_for_aidp_job,
+            op_kwargs={
+                "workspace_id": workspace_id,
+                "xcom_key":     "bronze_run_key",
+            },
+        )
+        trigger_gold = PythonOperator(
+            task_id="trigger_silver_to_gold",
+            python_callable=trigger_aidp_job,
+            op_kwargs={
+                "job_key":      cfg["silver_to_gold"],
+                "workspace_id": workspace_id,
+                "xcom_key":     "gold_run_key",
+            },
+        )
+        wait_gold = PythonOperator(
+            task_id="wait_silver_to_gold",
+            python_callable=wait_for_aidp_job,
+            op_kwargs={
+                "workspace_id": workspace_id,
+                "xcom_key":     "gold_run_key",
+            },
+        )
+        trigger_silver >> wait_silver >> trigger_gold >> wait_gold
 
-    body = {
-        "username": os.environ["ODI_USERNAME"],
-        "password": os.environ["ODI_PASSWORD"],
-        "tenant_name": os.environ["ODI_TENANCY"],
-        "database_name": os.environ["ODI_DATABASE_NAME"],
-        "cloud_database_name": os.environ["ODI_CLOUD_DB_NAME"],
-        "grant_type": "password"
-    }
-
-    response = requests.post(url, json=body)
-
-    if response.status_code != 200:
-        raise AirflowException(f"Failed to get ODI token: {response.text}")
-
-    access_token = response.json()["access_token"]
-    context["ti"].xcom_push(key="odi_token", value=access_token)
-
-
-# ==========================================
-# TASK 4 - SUBMIT REPORT WORKFLOW
-# ==========================================
-
-def submit_report(**context):
-    ODI_BASE_URL = os.environ["ODI_BASE_URL"]
-    token = context["ti"].xcom_pull(key="odi_token")
-
-    url = f"{ODI_BASE_URL}/odi/dt-rest/v2/jobs/submit"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    body = {
-        "action": "RUN",
-        "objectType": "WORKFLOW",
-        "objectId": "8b996467-4a59-40cf-a432-2b88e3cec8e6",
-        "objectName": "wf01",
-        "synchronous": False,
-        "ignorePreviousRunningJob": True,
-        "jobName": "airflow-report",
-        "jobVariables": {}
-    }
-
-    response = requests.post(url, headers=headers, json=body)
-
-    if response.status_code not in [200, 201]:
-        raise AirflowException(f"Failed to submit report: {response.text}")
-
-    job_id = response.json()["jobId"]
-    context["ti"].xcom_push(key="odi_job_id", value=job_id)
+    return dag
 
 
-# ==========================================
-# TASK 5 - WAIT REPORT COMPLETION
-# ==========================================
-
-def wait_for_report(**context):
-    ODI_BASE_URL = os.environ["ODI_BASE_URL"]
-    token = context["ti"].xcom_pull(key="odi_token")
-    job_id = context["ti"].xcom_pull(key="odi_job_id")
-
-    url = f"{ODI_BASE_URL}/odi/dt-rest/v2/jobs"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    while True:
-        response = requests.post(url, headers=headers, json={})
-
-        if response.status_code != 200:
-            raise AirflowException(f"Failed to fetch ODI jobs: {response.text}")
-
-        jobs = response.json()
-
-        for job in jobs:
-            if job["jobId"] == job_id:
-                status = job["status"]
-
-                if status == "DONE":
-                    return
-
-                if status in ["ERROR", "CANCELLED"]:
-                    raise AirflowException(f"ODI Job failed: {status}")
-
-        time.sleep(30)
-
-
-# ==========================================
-# DAG DEFINITION
-# ==========================================
-
-with DAG(
-    dag_id="full_pipeline",
-    start_date=days_ago(1),
-    schedule_interval=None,
-    catchup=False,
-    tags=["oci", "aidp", "odi"]
-) as dag:
-
-    t1 = PythonOperator(task_id="trigger_job", python_callable=trigger_job)
-    t2 = PythonOperator(task_id="wait_for_completion", python_callable=wait_for_job)
-    t3 = PythonOperator(task_id="get_odi_token", python_callable=get_odi_token)
-    t4 = PythonOperator(task_id="submit_report_workflow", python_callable=submit_report)
-    t5 = PythonOperator(task_id="wait_for_report_completion", python_callable=wait_for_report)
-
-    t1 >> t2 >> t3 >> t4 >> t5
-#    t3 >> t4 >> t5
+# Two DAGs — one per env. Airflow picks them up from module globals.
+rappi_medallion_dev = make_pipeline_dag("dev")
+rappi_medallion_prod = make_pipeline_dag("prod")

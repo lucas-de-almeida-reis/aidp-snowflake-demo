@@ -77,9 +77,12 @@ def _load_deploy_config():
         # AIDP runtime — passed straight through to the container as env vars.
         ("aidp", "region"):              "AIDP_REGION",
         ("aidp", "id"):                  "AIDP_ID",
-        ("aidp", "workspace_id"):        "AIDP_WORKSPACE_ID",
-        ("aidp", "silver_job_key"):      "AIDP_SILVER_JOB_KEY",
-        ("aidp", "gold_job_key"):        "AIDP_GOLD_JOB_KEY",
+        ("aidp", "jobs", "dev",  "workspace_id"): "AIDP_DEV_WORKSPACE_ID",
+        ("aidp", "jobs", "dev",  "bronze"):       "AIDP_DEV_BRONZE_JOB_KEY",
+        ("aidp", "jobs", "dev",  "gold"):         "AIDP_DEV_GOLD_JOB_KEY",
+        ("aidp", "jobs", "prod", "workspace_id"): "AIDP_PROD_WORKSPACE_ID",
+        ("aidp", "jobs", "prod", "bronze"):       "AIDP_PROD_BRONZE_JOB_KEY",
+        ("aidp", "jobs", "prod", "gold"):         "AIDP_PROD_GOLD_JOB_KEY",
         # Airflow admin login (defaults are admin/admin if unset).
         ("airflow", "admin_user"):       "AIRFLOW_ADMIN_USER",
         ("airflow", "admin_password"):   "AIRFLOW_ADMIN_PASSWORD",
@@ -346,14 +349,18 @@ def discover_config():
         return v
 
     aidp_region        = os.environ.get("AIDP_REGION") or region
-    aidp_id            = _require("AIDP_ID",            "AIDP dataLake OCID")
-    aidp_workspace_id  = _require("AIDP_WORKSPACE_ID",  "AIDP workspace OCID")
-    aidp_silver_job    = _require("AIDP_SILVER_JOB_KEY","AIDP silver job key (01_bronze_to_silver)")
-    aidp_gold_job      = _require("AIDP_GOLD_JOB_KEY",  "AIDP gold job key (02_silver_to_gold)")
+    aidp_id            = _require("AIDP_ID",                    "AIDP dataLake OCID")
+    aidp_dev_ws        = _require("AIDP_DEV_WORKSPACE_ID",      "AIDP dev workspace UUID")
+    aidp_dev_bronze    = _require("AIDP_DEV_BRONZE_JOB_KEY",    "AIDP dev bronze→silver job key")
+    aidp_dev_gold      = _require("AIDP_DEV_GOLD_JOB_KEY",      "AIDP dev silver→gold job key")
+    aidp_prod_ws       = _require("AIDP_PROD_WORKSPACE_ID",     "AIDP prod workspace UUID")
+    aidp_prod_bronze   = _require("AIDP_PROD_BRONZE_JOB_KEY",   "AIDP prod bronze→silver job key")
+    aidp_prod_gold     = _require("AIDP_PROD_GOLD_JOB_KEY",     "AIDP prod silver→gold job key")
 
-    print(f"  AIDP region:    {aidp_region}")
-    print(f"  AIDP dataLake:  {aidp_id}")
-    print(f"  AIDP workspace: {aidp_workspace_id}")
+    print(f"  AIDP region:        {aidp_region}")
+    print(f"  AIDP dataLake:      {aidp_id}")
+    print(f"  AIDP dev  workspace:{aidp_dev_ws}")
+    print(f"  AIDP prod workspace:{aidp_prod_ws}")
 
     repo = os.environ.get("OCIR_REPO", "rappi-aidp-airflow")
     tag = os.environ.get("OCIR_TAG", "latest")
@@ -392,11 +399,14 @@ def discover_config():
         "display_name": display_name,
         "ad": ad,
         # AIDP runtime — wired into container env in deploy_container()
-        "aidp_region":          aidp_region,
-        "aidp_id":              aidp_id,
-        "aidp_workspace_id":    aidp_workspace_id,
-        "aidp_silver_job_key":  aidp_silver_job,
-        "aidp_gold_job_key":    aidp_gold_job,
+        "aidp_region":              aidp_region,
+        "aidp_id":                  aidp_id,
+        "aidp_dev_workspace_id":    aidp_dev_ws,
+        "aidp_dev_bronze_job_key":  aidp_dev_bronze,
+        "aidp_dev_gold_job_key":    aidp_dev_gold,
+        "aidp_prod_workspace_id":   aidp_prod_ws,
+        "aidp_prod_bronze_job_key": aidp_prod_bronze,
+        "aidp_prod_gold_job_key":   aidp_prod_gold,
     }
 
 
@@ -755,31 +765,38 @@ def setup_networking(cfg):
 
 # ── Container Instance ───────────────────────────────────────────────
 
-# Names of optional env vars to forward into the container if the operator
-# happens to have them set locally. The Airflow DAG's ODI tasks fail if
-# their vars aren't present, so passing them through here is the easiest
-# path; anything missing locally can also be added later via the OCI
-# Console (Container Instance → Edit → Environment Variables).
+# Optional env vars forwarded into the container if set locally.
+# Anything missing here can also be added later via the OCI Console
+# (Container Instance → Edit → Environment Variables).
 _OPTIONAL_ENV_PASSTHROUGH = (
-    "ODI_BASE_URL", "ODI_USERNAME", "ODI_PASSWORD", "ODI_TENANCY",
-    "ODI_DATABASE_NAME", "ODI_CLOUD_DB_NAME",
-    "ODI_REPORT_WORKFLOW_ID", "ODI_REPORT_WORKFLOW_NAME",
     "AIRFLOW_ADMIN_USER", "AIRFLOW_ADMIN_PASSWORD",
 )
 
 
 def _build_container_env(cfg):
+    # API-key signing: the DAG's oci_sign_request() reads these four env
+    # vars directly. Resource-principal is not wired up in the DAG yet,
+    # so we ship the OCI signing private key inside the container env.
+    # WARNING: anyone with read access to this Container Instance can
+    # read PRIVATE_KEY out of `Edit → Environment Variables`. Rotate
+    # the API key if the container is compromised.
+    with open(cfg["oci_config"]["key_file"]) as _f:
+        private_key_pem = _f.read()
+
     env = {
-        # Tells the DAG to use the SDK's resource-principal signer.
-        # The OCI Container Instances runtime also sets OCI_RESOURCE_PRINCIPAL_*
-        # vars automatically — the DAG keys off those to actually obtain the signer.
-        "AIDP_AUTH":           "resource_principal",
         "OCI_REGION":          cfg["region"],
+        "TENANCY_ID":          cfg["tenancy_id"],
+        "USER_ID":             cfg["oci_config"]["user"],
+        "FINGERPRINT":         cfg["oci_config"]["fingerprint"],
+        "PRIVATE_KEY":         private_key_pem,
         "AIDP_REGION":         cfg["aidp_region"],
         "AIDP_ID":             cfg["aidp_id"],
-        "AIDP_WORKSPACE_ID":   cfg["aidp_workspace_id"],
-        "AIDP_SILVER_JOB_KEY": cfg["aidp_silver_job_key"],
-        "AIDP_GOLD_JOB_KEY":   cfg["aidp_gold_job_key"],
+        "AIDP_DEV_WORKSPACE_ID":    cfg["aidp_dev_workspace_id"],
+        "AIDP_DEV_BRONZE_JOB_KEY":  cfg["aidp_dev_bronze_job_key"],
+        "AIDP_DEV_GOLD_JOB_KEY":    cfg["aidp_dev_gold_job_key"],
+        "AIDP_PROD_WORKSPACE_ID":   cfg["aidp_prod_workspace_id"],
+        "AIDP_PROD_BRONZE_JOB_KEY": cfg["aidp_prod_bronze_job_key"],
+        "AIDP_PROD_GOLD_JOB_KEY":   cfg["aidp_prod_gold_job_key"],
     }
     for k in _OPTIONAL_ENV_PASSTHROUGH:
         v = os.environ.get(k)
@@ -880,11 +897,14 @@ def main():
   Shape:            {cfg['shape']} ({cfg['cpus']} OCPU, {cfg['memory_gb']} GB)
   AD:               {cfg['ad']}
   Display Name:     {cfg['display_name']}
-  AIDP region:      {cfg['aidp_region']}
-  AIDP dataLake:    {cfg['aidp_id']}
-  AIDP workspace:   {cfg['aidp_workspace_id']}
-  Silver job key:   {cfg['aidp_silver_job_key']}
-  Gold job key:     {cfg['aidp_gold_job_key']}
+  AIDP region:           {cfg['aidp_region']}
+  AIDP dataLake:         {cfg['aidp_id']}
+  AIDP dev  workspace:   {cfg['aidp_dev_workspace_id']}
+  AIDP prod workspace:   {cfg['aidp_prod_workspace_id']}
+  dev  bronze→silver:    {cfg['aidp_dev_bronze_job_key']}
+  dev  silver→gold:      {cfg['aidp_dev_gold_job_key']}
+  prod bronze→silver:    {cfg['aidp_prod_bronze_job_key']}
+  prod silver→gold:      {cfg['aidp_prod_gold_job_key']}
 """)
 
     if not _AUTO:
@@ -901,8 +921,8 @@ def main():
 
     def _print_post_deploy_notes():
         dg          = cfg.get("dg_ocid", "<your dynamic group OCID>")
-        admin_user  = os.environ.get("AIRFLOW_ADMIN_USER",     "admin")
-        admin_pass  = os.environ.get("AIRFLOW_ADMIN_PASSWORD", "admin")
+        admin_user  = os.environ["AIRFLOW_ADMIN_USER"]
+        admin_pass  = os.environ["AIRFLOW_ADMIN_PASSWORD"]
         print(f"""
   ┌─ If you see HTTP 403/404 from the AIDP jobRuns API ─────────────────┐
   │                                                                     │

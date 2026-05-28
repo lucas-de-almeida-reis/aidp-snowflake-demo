@@ -1,12 +1,7 @@
 -- ╔══════════════════════════════════════════════════════════════════╗
--- ║  3 — Verify bronze                                               ║
--- ║                                                                  ║
--- ║  Run against whichever DB you just seeded:                       ║
--- ║      USE DATABASE RAPPI_DEV;       -- or RAPPI_PROD              ║
--- ║      USE SCHEMA   BRONZE;                                        ║
+-- ║  DEV — 3. Verify bronze in RAPPI_DEV                         ║
 -- ╚══════════════════════════════════════════════════════════════════╝
 
--- ▼ change for prod
 USE DATABASE RAPPI_DEV;
 USE SCHEMA   BRONZE;
 

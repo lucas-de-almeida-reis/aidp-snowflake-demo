@@ -13,8 +13,9 @@
 # ║                                                                  ║
 # ║  Dev and prod use the SAME Snowflake account (same sfUrl), with  ║
 # ║  logical separation via database name only — RAPPI_DEV vs        ║
-# ║  RAPPI_PROD. Schema (BRONZE) and table (ORDER_DIMENSIONS) are    ║
-# ║  identical inside each DB; see assets/snowflake/*.sql.           ║
+# ║  RAPPI_PROD. AIDP-side, dev and prod each have their own         ║
+# ║  catalogs: silver_dev / silver_prod (Delta) and gold_dev /       ║
+# ║  gold_prod (external mounts to ADW).                             ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 
@@ -42,16 +43,16 @@ dev:
   source:
     table: ORDER_DIMENSIONS
 
-  # Silver target — AIDP standard catalog (Delta).
+  # Silver target — AIDP catalog (Delta).
   silver:
-    catalog: silver
+    catalog: silver_dev
     schema:  default
     table:   order_dimensions
 
-  # Gold target — ADW/ALH via the external-catalog mount.
+  # Gold target — AIDP catalog (external mount to ADW/ALH).
   gold:
-    catalog: gold
-    schema:  admin
+    catalog: gold_dev
+    schema:  default
     table:   orders_vertical_performance
 
 
@@ -71,11 +72,11 @@ prod:
     table: ORDER_DIMENSIONS
 
   silver:
-    catalog: silver
+    catalog: silver_prod
     schema:  default
     table:   order_dimensions
 
   gold:
-    catalog: gold
-    schema:  admin
+    catalog: gold_prod
+    schema:  default
     table:   orders_vertical_performance

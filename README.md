@@ -2,10 +2,10 @@
 
 End-to-end **medallion pipeline** for Rappi running on OCI:
 
-- **Bronze** lives in **Snowflake** — synthetic order facts (`RAPPI_SANDBOX.SYNTH.ORDER_DIMENSIONS_SYNTH`).
+- **Bronze** lives in **Snowflake** — synthetic order facts under `RAPPI_DEV.BRONZE.ORDER_DIMENSIONS` (dev) and `RAPPI_PROD.BRONZE.ORDER_DIMENSIONS` (prod) on the same account.
 - **Silver** lives in **AIDP** as **Delta** in the standard catalog.
 - **Gold** lives in **ADW / ALH** (Autonomous), reached from AIDP through an **external catalog** mount — code-wise it's just another catalog name.
-- **Airflow** orchestrates the two AIDP jobs (silver, then gold) plus a downstream ODI workflow.
+- **Airflow** orchestrates the two AIDP jobs (silver, then gold) — one DAG per env (`rappi_medallion_dev`, `rappi_medallion_prod`).
 
 ```
 ┌─────────────────┐   spark-snowflake   ┌─────────────────────┐   delta saveAsTable   ┌──────────────────────┐
@@ -41,10 +41,15 @@ aidp-snowflake-demo/
 ├── README.md
 └── assets/
     ├── snowflake/                          # Bronze layer (Snowflake)
-    │   ├── 0-initial-check.sql             # sandbox DB/schema + warehouse hardening
-    │   ├── 1-create-table.sql              # ORDER_DIMENSIONS_SYNTH (clustered by day, country)
-    │   ├── 2-Insert-synthetic-data.sql     # 10M synthetic rows
-    │   └── 3-verify-table.sql              # sanity counts
+    │   ├── 0-initial-check.sql             # bootstrap: creates BOTH RAPPI_DEV + RAPPI_PROD
+    │   ├── dev/                            # run after bootstrap
+    │   │   ├── 1-create-table.sql          # CREATE OR REPLACE in RAPPI_DEV.BRONZE
+    │   │   ├── 2-insert-data.sql           # 100k synthetic rows
+    │   │   └── 3-verify-table.sql          # sanity counts
+    │   └── prod/                           # mirror of dev/, different DB + 10M rows
+    │       ├── 1-create-table.sql
+    │       ├── 2-insert-data.sql
+    │       └── 3-verify-table.sql
     ├── aidp/
     │   ├── jars/                           # uploaded to the AIDP cluster classpath
     │   │   └── (download from Maven Central — see step 2.1 below)
@@ -65,14 +70,13 @@ aidp-snowflake-demo/
 
 ### 1. Snowflake — bronze
 
-Run the four SQL scripts under `assets/snowflake/` in order, against a worksheet attached to **COMPUTE_WH**:
+Run against a worksheet attached to **COMPUTE_WH**:
 
-| # | Script | What it does |
-|---|---|---|
-| 0 | `0-initial-check.sql`         | Hardens warehouse auto-suspend, creates `RAPPI_SANDBOX.SYNTH`, sets defaults. |
-| 1 | `1-create-table.sql`          | Creates `ORDER_DIMENSIONS_SYNTH` clustered by `(TO_DATE(ORDER_CREATED_AT), COUNTRY_CODE)`. |
-| 2 | `2-Insert-synthetic-data.sql` | Generates 10M synthetic rows. Edit `ROWCOUNT` for a smaller dev pass. |
-| 3 | `3-verify-table.sql`          | Sanity-check counts by country / status / month. |
+1. `0-initial-check.sql` — bootstrap. Idempotent. Hardens warehouse auto-suspend and creates **both** `RAPPI_DEV.BRONZE` and `RAPPI_PROD.BRONZE` in one shot.
+2. **For dev:** run [`dev/1-create-table.sql`](assets/snowflake/dev/1-create-table.sql) → [`dev/2-insert-data.sql`](assets/snowflake/dev/2-insert-data.sql) (seeds 100k rows) → [`dev/3-verify-table.sql`](assets/snowflake/dev/3-verify-table.sql).
+3. **For prod:** run [`prod/1-create-table.sql`](assets/snowflake/prod/1-create-table.sql) → [`prod/2-insert-data.sql`](assets/snowflake/prod/2-insert-data.sql) (seeds 10M rows) → [`prod/3-verify-table.sql`](assets/snowflake/prod/3-verify-table.sql).
+
+Schema (`BRONZE`) and table (`ORDER_DIMENSIONS`) names are identical inside each DB — only the database name differs, so the AIDP notebooks switch envs by changing `sfDatabase` in `config.yaml` and nothing else.
 
 Snowflake user/role for the AIDP job needs `USAGE` on the warehouse + database + schema and `SELECT` on the table.
 
@@ -107,23 +111,21 @@ FETCH FIRST 20 ROWS ONLY;
 
 ### 4. Airflow — orchestration
 
-`full_pipeline.py` triggers the two AIDP jobs in sequence, then a downstream ODI workflow. Required env vars (set as Airflow Variables, Secrets, or container env):
+`full_pipeline.py` exposes **two DAGs** built from a factory — one per env, each triggering its env's pair of AIDP jobs in sequence. Required env vars (set via `config-deploy.yaml` → baked into the container by `deploy.py`):
 
 | Variable                  | What it is |
 |---|---|
-| `TENANCY_ID`, `USER_ID`, `FINGERPRINT`, `PRIVATE_KEY` | OCI API-key auth for signing AIDP REST calls (see `deploy.py` section below for the resource-principal alternative). |
+| `TENANCY_ID`, `USER_ID`, `FINGERPRINT`, `PRIVATE_KEY` | OCI API-key auth for signing AIDP REST calls. Auto-extracted from `~/.oci/config` by `deploy.py`. |
 | `AIDP_REGION`             | e.g. `sa-saopaulo-1`. |
 | `AIDP_ID`                 | OCID of the AIDP dataLake. |
 | `AIDP_WORKSPACE_ID`       | OCID of the workspace. |
-| `AIDP_SILVER_JOB_KEY`     | Job key for `01_bronze_to_silver.ipynb`. |
-| `AIDP_GOLD_JOB_KEY`       | Job key for `02_silver_to_gold.ipynb`. |
-| `ODI_BASE_URL`, `ODI_USERNAME`, `ODI_PASSWORD`, `ODI_TENANCY`, `ODI_DATABASE_NAME`, `ODI_CLOUD_DB_NAME` | ODI broker creds. |
-| `ODI_REPORT_WORKFLOW_ID`, `ODI_REPORT_WORKFLOW_NAME` | the ODI workflow Airflow submits after gold completes. |
+| `AIDP_DEV_BRONZE_JOB_KEY` / `AIDP_DEV_GOLD_JOB_KEY`   | Dev AIDP job keys for `01_bronze_to_silver.ipynb` and `02_silver_to_gold.ipynb`. |
+| `AIDP_PROD_BRONZE_JOB_KEY` / `AIDP_PROD_GOLD_JOB_KEY` | Prod AIDP job keys (same notebooks, separate AIDP jobs per env). |
 
-Run the DAG manually first (`rappi_medallion_pipeline` → Trigger DAG) to validate end-to-end. The task graph is:
+Pick a DAG in the Airflow UI (`rappi_medallion_dev` or `rappi_medallion_prod`) → Trigger DAG. The task graph for each is:
 
 ```
-trigger_silver → wait_silver → trigger_gold → wait_gold → get_odi_token → submit_report → wait_for_report
+trigger_bronze_to_silver → wait_bronze_to_silver → trigger_silver_to_gold → wait_silver_to_gold
 ```
 
 ### 4a. Deploying Airflow as an OCI Container Instance
@@ -169,7 +171,6 @@ If a `jobRuns` call later returns 403, add the Dynamic Group OCID (printed at th
 |---|---|---|
 | Snowflake → silver | 3–6 min                 | Delta table partitioned by `(country_code, order_date)` |
 | Silver → gold      | 30–90 s                 | ~10K rows in `gold.vertical_performance` on ADW |
-| ODI report         | depends on your workflow | the ODI workflow `ODI_REPORT_WORKFLOW_NAME` |
 
 Total wall-clock for the medallion legs typically lands under **8 minutes** for the synthetic 10M-row dataset on a modest AIDP cluster.
 
