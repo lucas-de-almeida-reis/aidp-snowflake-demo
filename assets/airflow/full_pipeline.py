@@ -18,18 +18,19 @@ from cryptography.hazmat.backends import default_backend
 # ==========================================
 # CONFIG — per-env AIDP job keys
 # ==========================================
-# Two AIDP jobs per env (one per notebook). The jobs themselves are
+# Two AIDP jobs per env (one per notebook), passed in as env vars by
+# deploy.py from config-deploy.yaml. The AIDP jobs themselves are
 # configured at the AIDP level with the right AIDP_ENV env var, so
-# the DAG only needs the job keys — it doesn't pass env separately.
+# the DAG only triggers them — it doesn't pass env separately.
 
 JOB_KEYS = {
     "dev": {
-        "bronze_to_silver": "4c89ba4b-0f3a-4640-bfa6-749515a76402",
-        "silver_to_gold":   "f0693668-7009-4a72-a93e-1c16b5aabe35",
+        "bronze_to_silver": os.environ["AIDP_DEV_BRONZE_JOB_KEY"],
+        "silver_to_gold":   os.environ["AIDP_DEV_GOLD_JOB_KEY"],
     },
     "prod": {
-        "bronze_to_silver": "144525e9-f617-4e04-8616-f7d74c7d0f98",
-        "silver_to_gold":   "22ca2481-ff11-45a8-9eeb-217a12520904",
+        "bronze_to_silver": os.environ["AIDP_PROD_BRONZE_JOB_KEY"],
+        "silver_to_gold":   os.environ["AIDP_PROD_GOLD_JOB_KEY"],
     },
 }
 

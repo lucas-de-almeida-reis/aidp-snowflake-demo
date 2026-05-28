@@ -78,8 +78,10 @@ def _load_deploy_config():
         ("aidp", "region"):              "AIDP_REGION",
         ("aidp", "id"):                  "AIDP_ID",
         ("aidp", "workspace_id"):        "AIDP_WORKSPACE_ID",
-        ("aidp", "silver_job_key"):      "AIDP_SILVER_JOB_KEY",
-        ("aidp", "gold_job_key"):        "AIDP_GOLD_JOB_KEY",
+        ("aidp", "jobs", "dev",  "bronze"): "AIDP_DEV_BRONZE_JOB_KEY",
+        ("aidp", "jobs", "dev",  "gold"):   "AIDP_DEV_GOLD_JOB_KEY",
+        ("aidp", "jobs", "prod", "bronze"): "AIDP_PROD_BRONZE_JOB_KEY",
+        ("aidp", "jobs", "prod", "gold"):   "AIDP_PROD_GOLD_JOB_KEY",
         # Airflow admin login (defaults are admin/admin if unset).
         ("airflow", "admin_user"):       "AIRFLOW_ADMIN_USER",
         ("airflow", "admin_password"):   "AIRFLOW_ADMIN_PASSWORD",
@@ -348,8 +350,10 @@ def discover_config():
     aidp_region        = os.environ.get("AIDP_REGION") or region
     aidp_id            = _require("AIDP_ID",            "AIDP dataLake OCID")
     aidp_workspace_id  = _require("AIDP_WORKSPACE_ID",  "AIDP workspace OCID")
-    aidp_silver_job    = _require("AIDP_SILVER_JOB_KEY","AIDP silver job key (01_bronze_to_silver)")
-    aidp_gold_job      = _require("AIDP_GOLD_JOB_KEY",  "AIDP gold job key (02_silver_to_gold)")
+    aidp_dev_bronze    = _require("AIDP_DEV_BRONZE_JOB_KEY",  "AIDP dev bronze→silver job key")
+    aidp_dev_gold      = _require("AIDP_DEV_GOLD_JOB_KEY",    "AIDP dev silver→gold job key")
+    aidp_prod_bronze   = _require("AIDP_PROD_BRONZE_JOB_KEY", "AIDP prod bronze→silver job key")
+    aidp_prod_gold     = _require("AIDP_PROD_GOLD_JOB_KEY",   "AIDP prod silver→gold job key")
 
     print(f"  AIDP region:    {aidp_region}")
     print(f"  AIDP dataLake:  {aidp_id}")
@@ -395,8 +399,10 @@ def discover_config():
         "aidp_region":          aidp_region,
         "aidp_id":              aidp_id,
         "aidp_workspace_id":    aidp_workspace_id,
-        "aidp_silver_job_key":  aidp_silver_job,
-        "aidp_gold_job_key":    aidp_gold_job,
+        "aidp_dev_bronze_job_key":  aidp_dev_bronze,
+        "aidp_dev_gold_job_key":    aidp_dev_gold,
+        "aidp_prod_bronze_job_key": aidp_prod_bronze,
+        "aidp_prod_gold_job_key":   aidp_prod_gold,
     }
 
 
@@ -778,8 +784,10 @@ def _build_container_env(cfg):
         "AIDP_REGION":         cfg["aidp_region"],
         "AIDP_ID":             cfg["aidp_id"],
         "AIDP_WORKSPACE_ID":   cfg["aidp_workspace_id"],
-        "AIDP_SILVER_JOB_KEY": cfg["aidp_silver_job_key"],
-        "AIDP_GOLD_JOB_KEY":   cfg["aidp_gold_job_key"],
+        "AIDP_DEV_BRONZE_JOB_KEY":  cfg["aidp_dev_bronze_job_key"],
+        "AIDP_DEV_GOLD_JOB_KEY":    cfg["aidp_dev_gold_job_key"],
+        "AIDP_PROD_BRONZE_JOB_KEY": cfg["aidp_prod_bronze_job_key"],
+        "AIDP_PROD_GOLD_JOB_KEY":   cfg["aidp_prod_gold_job_key"],
     }
     for k in _OPTIONAL_ENV_PASSTHROUGH:
         v = os.environ.get(k)
@@ -883,8 +891,10 @@ def main():
   AIDP region:      {cfg['aidp_region']}
   AIDP dataLake:    {cfg['aidp_id']}
   AIDP workspace:   {cfg['aidp_workspace_id']}
-  Silver job key:   {cfg['aidp_silver_job_key']}
-  Gold job key:     {cfg['aidp_gold_job_key']}
+  dev  bronze→silver:  {cfg['aidp_dev_bronze_job_key']}
+  dev  silver→gold:    {cfg['aidp_dev_gold_job_key']}
+  prod bronze→silver:  {cfg['aidp_prod_bronze_job_key']}
+  prod silver→gold:    {cfg['aidp_prod_gold_job_key']}
 """)
 
     if not _AUTO:

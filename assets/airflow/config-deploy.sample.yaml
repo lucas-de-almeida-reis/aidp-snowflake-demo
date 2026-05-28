@@ -17,15 +17,23 @@ aidp:
   region: sa-saopaulo-1
 
   # AIDP dataLake OCID — AIDP Console → your dataLake → copy OCID.
-  id: ocid1.datalake.oc1.<region>.<DATALAKE_ID>
+  # (Resource type is `aidataplatform`, not `datalake`.)
+  id: ocid1.aidataplatform.oc1.<region>.<DATALAKE_ID>
 
   # Workspace OCID — AIDP Console → Workspace → details.
   workspace_id: <WORKSPACE_ID>
 
-  # Job keys — create one AIDP job per notebook (Workspace → Jobs → Create),
-  # then paste each job's key here.
-  silver_job_key: <silver_job_key>   # runs 01_bronze_to_silver.ipynb
-  gold_job_key:   <gold_job_key>     # runs 02_silver_to_gold.ipynb
+  # Job keys per env. Create FOUR AIDP jobs (Workspace → Jobs → Create):
+  # one per notebook per env (dev-bronze, dev-gold, prod-bronze, prod-gold).
+  # The DAG factory in full_pipeline.py builds two DAGs — rappi_medallion_dev
+  # and rappi_medallion_prod — using these keys.
+  jobs:
+    dev:
+      bronze: <dev_bronze_job_key>   # runs 01_bronze_to_silver.ipynb
+      gold:   <dev_gold_job_key>     # runs 02_silver_to_gold.ipynb
+    prod:
+      bronze: <prod_bronze_job_key>
+      gold:   <prod_gold_job_key>
 
 
 # ─── Airflow admin login ───────────────────────────────────────────
