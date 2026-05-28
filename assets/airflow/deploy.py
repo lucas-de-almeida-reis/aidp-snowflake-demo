@@ -157,23 +157,11 @@ def wait_for_state(get_fn, target_states, max_wait=300, poll_interval=10):
 # ── Discovery ────────────────────────────────────────────────────────
 
 def discover_config():
-    """Auto-discover all config from a local auth bundle (or ~/.oci/config),
-    plus OCI APIs; prompt for the rest."""
+    """Auto-discover all config from ~/.oci/config + OCI APIs, prompt for the rest."""
     print("\n── Configuration ──────────────────────────────────────────")
+    print("  Loading ~/.oci/config...")
 
-    # Prefer a project-local auth bundle if present — keeps the deploy
-    # self-contained. The folder is .gitignored and holds both the config
-    # file and the PEM.
-    local_cfg = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "auth_lucas", "config"
-    )
-    local_cfg = os.path.normpath(local_cfg)
-    if os.path.exists(local_cfg):
-        print(f"  Loading {local_cfg}...")
-        oci_config = oci.config.from_file(file_location=local_cfg)
-    else:
-        print("  Loading ~/.oci/config...")
-        oci_config = oci.config.from_file()
+    oci_config = oci.config.from_file()
     oci.config.validate_config(oci_config)
 
     tenancy_id = os.environ.get("OCI_TENANCY_ID") or oci_config["tenancy"]
