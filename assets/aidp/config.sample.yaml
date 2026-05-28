@@ -19,10 +19,13 @@
 
 
 dev:
-  # Row cap applied by 01/02 to the Snowflake pull / silver read.
-  # 0 = no limit; any positive int = LIMIT N (full table not scanned).
-  # Convention: small int in dev, 0 in prod.
-  test_rows: 50000
+  # Per-notebook row caps. 0 = no limit; positive int = LIMIT N.
+  # bronze : applied by 01 to the Snowflake pull (SQL LIMIT, pushed down).
+  # silver : applied by 02 to the silver read before gold aggregation.
+  # Convention: tiny ints in dev for fast iteration, 0 in prod.
+  test_rows:
+    bronze: 1000
+    silver: 100
 
   # Snowflake source — bronze. `credential` is the AIDP credential
   # name (Workspace → Credential store) holding the two keys
@@ -53,7 +56,9 @@ dev:
 
 
 prod:
-  test_rows: 0   # full run — no limit
+  test_rows:
+    bronze: 0   # full run — no limit
+    silver: 0   # full run — no limit
 
   snowflake:
     credential:  snowflake_prod
