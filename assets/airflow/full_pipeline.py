@@ -16,6 +16,34 @@ from cryptography.hazmat.backends import default_backend
 
 
 # ==========================================
+# CONFIG — per-env AIDP job keys
+# ==========================================
+# Two AIDP jobs per env (one per notebook). The jobs themselves are
+# configured at the AIDP level with the right AIDP_ENV env var, so
+# the DAG only needs the job keys — it doesn't pass env separately.
+
+JOB_KEYS = {
+    "dev": {
+        "bronze_to_silver": "4c89ba4b-0f3a-4640-bfa6-749515a76402",
+        "silver_to_gold":   "f0693668-7009-4a72-a93e-1c16b5aabe35",
+    },
+    "prod": {
+        "bronze_to_silver": "144525e9-f617-4e04-8616-f7d74c7d0f98",
+        "silver_to_gold":   "22ca2481-ff11-45a8-9eeb-217a12520904",
+    },
+}
+
+# Same workspace for both envs — only the job keys differ.
+# Overridable via env so deploy.yaml can drive it.
+WORKSPACE_ID = os.environ.get(
+    "AIDP_WORKSPACE_ID",
+    "51abe3fa-37fd-46f9-a76f-7961117f9835",
+)
+AIDP_REGION = os.environ.get("AIDP_REGION", "sa-saopaulo-1")
+ODI_REPORT_WORKFLOW_ID = "8b996467-4a59-40cf-a432-2b88e3cec8e6"
+
+
+# ==========================================
 # OCI SIGNING FUNCTION (AIDP)
 # ==========================================
 
@@ -91,39 +119,37 @@ def oci_sign_request(method, url, body=None):
 
 
 # ==========================================
-# TASK 1 - TRIGGER AIDP JOB
+# TASKS — AIDP trigger / wait (parameterised)
 # ==========================================
 
-def trigger_job(**context):
+def trigger_aidp_job(job_key, xcom_key, **context):
     AIDP_ID = os.environ["AIDP_ID"]
-
-    url = f"https://aidp.sa-saopaulo-1.oci.oraclecloud.com/20240831/" \
-          f"dataLakes/{AIDP_ID}/workspaces/" \
-          f"51abe3fa-37fd-46f9-a76f-7961117f9835/jobRuns"
-
-    body = {"jobKey": "7b71aac0-6ecc-4a9a-a06d-0c439775ffed"}
+    url = (
+        f"https://aidp.{AIDP_REGION}.oci.oraclecloud.com/20240831/"
+        f"dataLakes/{AIDP_ID}/workspaces/{WORKSPACE_ID}/jobRuns"
+    )
+    body = {"jobKey": job_key}
 
     headers, body_json = oci_sign_request("post", url, body)
     response = requests.post(url, headers=headers, data=body_json)
 
     if response.status_code != 201:
-        raise AirflowException(f"Failed to start job: {response.text}")
+        raise AirflowException(
+            f"Failed to start job {job_key}: {response.text}"
+        )
 
     job_run_key = response.json()["key"]
-    context["ti"].xcom_push(key="job_run_key", value=job_run_key)
+    context["ti"].xcom_push(key=xcom_key, value=job_run_key)
 
 
-# ==========================================
-# TASK 2 - WAIT AIDP COMPLETION
-# ==========================================
-
-def wait_for_job(**context):
+def wait_for_aidp_job(xcom_key, **context):
     AIDP_ID = os.environ["AIDP_ID"]
-    job_run_key = context["ti"].xcom_pull(key="job_run_key")
+    job_run_key = context["ti"].xcom_pull(key=xcom_key)
 
-    url = f"https://aidp.sa-saopaulo-1.oci.oraclecloud.com/20240831/" \
-          f"dataLakes/{AIDP_ID}/workspaces/" \
-          f"51abe3fa-37fd-46f9-a76f-7961117f9835/jobRuns/{job_run_key}"
+    url = (
+        f"https://aidp.{AIDP_REGION}.oci.oraclecloud.com/20240831/"
+        f"dataLakes/{AIDP_ID}/workspaces/{WORKSPACE_ID}/jobRuns/{job_run_key}"
+    )
 
     while True:
         headers, _ = oci_sign_request("get", url)
@@ -138,13 +164,13 @@ def wait_for_job(**context):
             return
 
         if status in ["FAILED", "CANCELED"]:
-            raise AirflowException(f"AIDP Job failed: {status}")
+            raise AirflowException(f"AIDP Job {job_run_key} ended in {status}")
 
         time.sleep(30)
 
 
 # ==========================================
-# TASK 3 - GET ODI TOKEN
+# TASKS — ODI report workflow
 # ==========================================
 
 def get_odi_token(**context):
@@ -170,10 +196,6 @@ def get_odi_token(**context):
     context["ti"].xcom_push(key="odi_token", value=access_token)
 
 
-# ==========================================
-# TASK 4 - SUBMIT REPORT WORKFLOW
-# ==========================================
-
 def submit_report(**context):
     ODI_BASE_URL = os.environ["ODI_BASE_URL"]
     token = context["ti"].xcom_pull(key="odi_token")
@@ -188,7 +210,7 @@ def submit_report(**context):
     body = {
         "action": "RUN",
         "objectType": "WORKFLOW",
-        "objectId": "8b996467-4a59-40cf-a432-2b88e3cec8e6",
+        "objectId": ODI_REPORT_WORKFLOW_ID,
         "objectName": "wf01",
         "synchronous": False,
         "ignorePreviousRunningJob": True,
@@ -204,10 +226,6 @@ def submit_report(**context):
     job_id = response.json()["jobId"]
     context["ti"].xcom_push(key="odi_job_id", value=job_id)
 
-
-# ==========================================
-# TASK 5 - WAIT REPORT COMPLETION
-# ==========================================
 
 def wait_for_report(**context):
     ODI_BASE_URL = os.environ["ODI_BASE_URL"]
@@ -243,22 +261,71 @@ def wait_for_report(**context):
 
 
 # ==========================================
-# DAG DEFINITION
+# DAG FACTORY — one per env
 # ==========================================
 
-with DAG(
-    dag_id="full_pipeline",
-    start_date=days_ago(1),
-    schedule_interval=None,
-    catchup=False,
-    tags=["oci", "aidp", "odi"]
-) as dag:
+def make_pipeline_dag(env):
+    keys = JOB_KEYS[env]
 
-    t1 = PythonOperator(task_id="trigger_job", python_callable=trigger_job)
-    t2 = PythonOperator(task_id="wait_for_completion", python_callable=wait_for_job)
-    t3 = PythonOperator(task_id="get_odi_token", python_callable=get_odi_token)
-    t4 = PythonOperator(task_id="submit_report_workflow", python_callable=submit_report)
-    t5 = PythonOperator(task_id="wait_for_report_completion", python_callable=wait_for_report)
+    with DAG(
+        dag_id=f"rappi_medallion_{env}",
+        start_date=days_ago(1),
+        schedule_interval=None,
+        catchup=False,
+        tags=["oci", "aidp", "odi", env],
+    ) as dag:
+        trigger_silver = PythonOperator(
+            task_id="trigger_bronze_to_silver",
+            python_callable=trigger_aidp_job,
+            op_kwargs={
+                "job_key": keys["bronze_to_silver"],
+                "xcom_key": "bronze_run_key",
+            },
+        )
+        wait_silver = PythonOperator(
+            task_id="wait_bronze_to_silver",
+            python_callable=wait_for_aidp_job,
+            op_kwargs={"xcom_key": "bronze_run_key"},
+        )
+        trigger_gold = PythonOperator(
+            task_id="trigger_silver_to_gold",
+            python_callable=trigger_aidp_job,
+            op_kwargs={
+                "job_key": keys["silver_to_gold"],
+                "xcom_key": "gold_run_key",
+            },
+        )
+        wait_gold = PythonOperator(
+            task_id="wait_silver_to_gold",
+            python_callable=wait_for_aidp_job,
+            op_kwargs={"xcom_key": "gold_run_key"},
+        )
+        get_token = PythonOperator(
+            task_id="get_odi_token",
+            python_callable=get_odi_token,
+        )
+        submit_rpt = PythonOperator(
+            task_id="submit_report_workflow",
+            python_callable=submit_report,
+        )
+        wait_rpt = PythonOperator(
+            task_id="wait_for_report_completion",
+            python_callable=wait_for_report,
+        )
 
-    t1 >> t2 >> t3 >> t4 >> t5
-#    t3 >> t4 >> t5
+        (
+            trigger_silver
+            >> wait_silver
+            >> trigger_gold
+            >> wait_gold
+            >> get_token
+            >> submit_rpt
+            >> wait_rpt
+        )
+
+    return dag
+
+
+# Two DAGs — one per env. Airflow picks them up from module globals.
+rappi_medallion_dev = make_pipeline_dag("dev")
+rappi_medallion_prod = make_pipeline_dag("prod")
