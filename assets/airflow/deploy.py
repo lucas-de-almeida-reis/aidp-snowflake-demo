@@ -157,11 +157,23 @@ def wait_for_state(get_fn, target_states, max_wait=300, poll_interval=10):
 # ── Discovery ────────────────────────────────────────────────────────
 
 def discover_config():
-    """Auto-discover all config from ~/.oci/config + OCI APIs, prompt for the rest."""
+    """Auto-discover all config from a local auth bundle (or ~/.oci/config),
+    plus OCI APIs; prompt for the rest."""
     print("\n── Configuration ──────────────────────────────────────────")
-    print("  Loading ~/.oci/config...")
 
-    oci_config = oci.config.from_file()
+    # Prefer a project-local auth bundle if present — keeps the deploy
+    # self-contained. The folder is .gitignored and holds both the config
+    # file and the PEM.
+    local_cfg = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "auth_lucas", "config"
+    )
+    local_cfg = os.path.normpath(local_cfg)
+    if os.path.exists(local_cfg):
+        print(f"  Loading {local_cfg}...")
+        oci_config = oci.config.from_file(file_location=local_cfg)
+    else:
+        print("  Loading ~/.oci/config...")
+        oci_config = oci.config.from_file()
     oci.config.validate_config(oci_config)
 
     tenancy_id = os.environ.get("OCI_TENANCY_ID") or oci_config["tenancy"]
@@ -775,12 +787,21 @@ _OPTIONAL_ENV_PASSTHROUGH = (
 
 
 def _build_container_env(cfg):
+    # API-key signing: the DAG's oci_sign_request() reads these four env
+    # vars directly. Resource-principal is not wired up in the DAG yet,
+    # so we ship the OCI signing private key inside the container env.
+    # WARNING: anyone with read access to this Container Instance can
+    # read PRIVATE_KEY out of `Edit → Environment Variables`. Rotate
+    # the API key if the container is compromised.
+    with open(cfg["oci_config"]["key_file"]) as _f:
+        private_key_pem = _f.read()
+
     env = {
-        # Tells the DAG to use the SDK's resource-principal signer.
-        # The OCI Container Instances runtime also sets OCI_RESOURCE_PRINCIPAL_*
-        # vars automatically — the DAG keys off those to actually obtain the signer.
-        "AIDP_AUTH":           "resource_principal",
         "OCI_REGION":          cfg["region"],
+        "TENANCY_ID":          cfg["tenancy_id"],
+        "USER_ID":             cfg["oci_config"]["user"],
+        "FINGERPRINT":         cfg["oci_config"]["fingerprint"],
+        "PRIVATE_KEY":         private_key_pem,
         "AIDP_REGION":         cfg["aidp_region"],
         "AIDP_ID":             cfg["aidp_id"],
         "AIDP_WORKSPACE_ID":   cfg["aidp_workspace_id"],

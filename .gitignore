@@ -10,6 +10,9 @@ assets/airflow/config-deploy.yaml
 # Private keys (OCI API keys, etc.) — NEVER commit
 *.pem
 
+# Local OCI auth bundle (config + PEM) — keep local-only
+auth_lucas/
+
 # OAC config (OCIDs + fingerprint live here alongside the PEM — keep local-only)
 assets/oac/
 
