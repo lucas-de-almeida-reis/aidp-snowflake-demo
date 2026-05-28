@@ -10,10 +10,23 @@
 # ║  Sensitive values (sfUser, sfPassword) are NOT in this file.    ║
 # ║  They live in AIDP secrets — the `credential` key below names    ║
 # ║  the AIDP credential containing the `user` and `password` keys.  ║
+# ║                                                                  ║
+# ║  Dev and prod use the SAME Snowflake account (same sfUrl), with  ║
+# ║  logical separation via database name only — RAPPI_DEV vs        ║
+# ║  RAPPI_PROD. Schema (BRONZE) and table (ORDER_DIMENSIONS) are    ║
+# ║  identical inside each DB; see assets/snowflake/*.sql.           ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 
 dev:
+  # Per-notebook row caps. 0 = no limit; positive int = LIMIT N.
+  # bronze : applied by 01 to the Snowflake pull (SQL LIMIT, pushed down).
+  # silver : applied by 02 to the silver read before gold aggregation.
+  # Convention: tiny ints in dev for fast iteration, 0 in prod.
+  test_rows:
+    bronze: 1000
+    silver: 100
+
   # Snowflake source — bronze. `credential` is the AIDP credential
   # name (Workspace → Credential store) holding the two keys
   # `user` and `password`. Everything else is a Snowflake Spark
@@ -21,13 +34,13 @@ dev:
   snowflake:
     credential:  snowflake_dev
     sfUrl:       https://<account>.<region>.snowflakecomputing.com
-    sfDatabase:  RAPPI_SANDBOX
-    sfSchema:    SYNTH
+    sfDatabase:  RAPPI_DEV
+    sfSchema:    BRONZE
     sfWarehouse: COMPUTE_WH
 
   # Bronze table to read.
   source:
-    table: ORDER_DIMENSIONS_SYNTH
+    table: ORDER_DIMENSIONS
 
   # Silver target — AIDP standard catalog (Delta).
   silver:
@@ -43,12 +56,16 @@ dev:
 
 
 prod:
+  test_rows:
+    bronze: 0   # full run — no limit
+    silver: 0   # full run — no limit
+
   snowflake:
     credential:  snowflake_prod
-    sfUrl:       https://<prod-account>.snowflakecomputing.com
+    sfUrl:       https://<account>.<region>.snowflakecomputing.com   # same account as dev
     sfDatabase:  RAPPI_PROD
-    sfSchema:    PUBLIC
-    sfWarehouse: PROD_WH
+    sfSchema:    BRONZE
+    sfWarehouse: COMPUTE_WH
 
   source:
     table: ORDER_DIMENSIONS

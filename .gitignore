@@ -1,11 +1,22 @@
 # Local Claude Code workspace
 .claude/
 
-# Spark connector JARs — download from Maven Central, see README
-assets/aidp/jars/*.jar
-
 # Notebook runtime config — copy config.sample.yaml to config.yaml and fill in
 assets/aidp/config.yaml
+
+# Private keys (OCI API keys, etc.) — NEVER commit
+*.pem
+
+# OAC config (OCIDs + fingerprint live here alongside the PEM — keep local-only)
+assets/oac/
+
+# Vendor drivers / archives — download from the vendor, don't commit binaries
+*.jar
+*.zip
+
+# Tableau autosave / backup / lock files
+*.twbr
+.~*
 
 # macOS
 .DS_Store
